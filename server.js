@@ -4,7 +4,7 @@ const cors = require('cors');
 const fs = require('fs');
 const http = require('http');
 const WebSocket = require('ws');
-
+const { jwtDecode } = require('jwt-decode');
 // Tạo ứng dụng Express
 const app = express();
 const server = http.createServer(app);
@@ -42,9 +42,15 @@ app.use(bodyParser.json());
 
 // API nhận vị trí
 app.post('/api/location', (req, res) => {
-    const locationData = req.body;
+    let locationData = req.body;
+    console.log('Request location', {});
+    if (locationData.token) {
+        const decodeData = jwtDecode(locationData.token);
+        const email = decodeData.user.email;
+        delete locationData.token;
+        locationData.email = email;
+    }
     console.log('Request location', locationData);
-    
     // Gửi dữ liệu vị trí qua WebSocket tới tất cả clients
     broadcastLocation({
         type: 'location',
