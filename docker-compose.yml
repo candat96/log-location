@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "5021:5021"
+    environment:
+      # Connect to the MySQL service from docker-compose-mysql.yml
+      # Use 'host.docker.internal' to connect to the host machine from inside the container
+      # This allows the app to connect to MySQL running on the host
+      - MYSQL_HOST=host.docker.internal
+      - MYSQL_USER=roadcare
+      - MYSQL_PASSWORD=deepcare@2024
+      - MYSQL_DATABASE=location_db
+      - RUNNING_IN_DOCKER=true
+    volumes:
+      - ./trips:/usr/src/app/trips
+    restart: unless-stopped
+    # Add network_mode: "host" for Windows to make host.docker.internal work
+    # This is needed for Windows Docker Desktop
+    network_mode: "host"
