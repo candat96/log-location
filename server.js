@@ -72,13 +72,38 @@ initDatabase();
 // Tạo WebSocket server
 const wss = new WebSocket.Server({ server });
 
-// Lưu danh sách các clients kết nối
-const clients = new Set();
+// Lưu danh sách các clients kết nối với thông tin email họ quan tâm
+const clients = new Map(); // Map để lưu client và email họ đăng ký
 
 // Xử lý kết nối WebSocket
-wss.on('connection', (ws) => {
-    console.log('Client connected');
-    clients.add(ws);
+wss.on('connection', (ws, req) => {
+    // Lấy email từ query string (ví dụ: ws://your-server-address:5021?email=example@gmail.com)
+    const serverHost = req.headers.host || '173.249.38.33:5021';
+    const url = new URL(req.url, `http://${serverHost}`);
+    const email = url.searchParams.get('email');
+    
+    console.log(`Client connected${email ? ` - listening to email: ${email}` : ' - no email specified'}`);
+    
+    // Lưu client với email họ quan tâm (nếu có)
+    clients.set(ws, { email });
+    
+    // Xử lý tin nhắn từ client (cho phép thay đổi email đang lắng nghe)
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            if (data.action === 'subscribe' && data.email) {
+                clients.set(ws, { email: data.email });
+                console.log(`Client updated subscription to email: ${data.email}`);
+                ws.send(JSON.stringify({ 
+                    type: 'subscription', 
+                    status: 'success', 
+                    message: `Subscribed to updates for ${data.email}` 
+                }));
+            }
+        } catch (error) {
+            console.error('Error processing message:', error);
+        }
+    });
 
     // Xử lý khi client ngắt kết nối
     ws.on('close', () => {
@@ -87,10 +112,17 @@ wss.on('connection', (ws) => {
     });
 });
 
-// Hàm gửi dữ liệu tới tất cả clients
+// Hàm gửi dữ liệu tới clients dựa trên email
 function broadcastLocation(data) {
-    clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
+    const targetEmail = data.data?.email;
+    
+    clients.forEach((clientInfo, client) => {
+        // Kiểm tra xem client có đang lắng nghe email này không
+        // Gửi cho client nếu:
+        // 1. Client không chỉ định email cụ thể (nhận tất cả)
+        // 2. Email của client trùng với email trong dữ liệu
+        if (client.readyState === WebSocket.OPEN && 
+            (!clientInfo.email || !targetEmail || clientInfo.email === targetEmail)) {
             client.send(JSON.stringify(data));
         }
     });
@@ -184,7 +216,11 @@ app.post('/api/saveTrip', (req, res) => {
 
 // Khởi động server
 const PORT = 5021;
-server.listen(PORT, () => {
-    console.log(`Server đang chạy tại http://localhost:${PORT}`);
-    console.log(`WebSocket server đang chạy tại ws://localhost:${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+const SERVER_URL = process.env.SERVER_URL || 'localhost';
+
+server.listen(PORT, HOST, () => {
+    console.log(`Server đang chạy tại http://${SERVER_URL}:${PORT}`);
+    console.log(`WebSocket server đang chạy tại ws://${SERVER_URL}:${PORT}`);
+    console.log(`(Sử dụng địa chỉ IP hoặc tên miền thực tế của server thay cho '${SERVER_URL}' khi kết nối từ xa)`);
 });

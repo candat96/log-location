@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Tracking WebSocket Client Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .panel {
+            flex: 1;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 15px;
+        }
+        .log {
+            height: 300px;
+            overflow-y: auto;
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+        .log-entry {
+            margin-bottom: 5px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+        .controls {
+            margin-bottom: 15px;
+        }
+        button, input {
+            padding: 8px;
+            margin: 5px 0;
+        }
+        input {
+            width: 250px;
+        }
+        .status {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .connected {
+            color: green;
+        }
+        .disconnected {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <h1>Location Tracking WebSocket Client Example</h1>
+    
+    <div class="container">
+        <div class="panel">
+            <h2>Client 1</h2>
+            <div id="status1" class="status disconnected">Disconnected</div>
+            
+            <div class="controls">
+                <div>
+                    <label for="email1">Email Filter:</label>
+                    <input type="email" id="email1" placeholder="Enter email to filter by">
+                </div>
+                <button id="connect1">Connect</button>
+                <button id="disconnect1">Disconnect</button>
+                <button id="changeEmail1">Change Email Subscription</button>
+            </div>
+            
+            <h3>Received Messages:</h3>
+            <div id="log1" class="log"></div>
+        </div>
+        
+        <div class="panel">
+            <h2>Client 2</h2>
+            <div id="status2" class="status disconnected">Disconnected</div>
+            
+            <div class="controls">
+                <div>
+                    <label for="email2">Email Filter:</label>
+                    <input type="email" id="email2" placeholder="Enter email to filter by">
+                </div>
+                <button id="connect2">Connect</button>
+                <button id="disconnect2">Disconnect</button>
+                <button id="changeEmail2">Change Email Subscription</button>
+            </div>
+            
+            <h3>Received Messages:</h3>
+            <div id="log2" class="log"></div>
+        </div>
+    </div>
+    
+    <h2>Simulate Location Update</h2>
+    <div class="controls">
+        <div>
+            <label for="simEmail">Email:</label>
+            <input type="email" id="simEmail" placeholder="Enter email for location update">
+        </div>
+        <div>
+            <label for="simLat">Latitude:</label>
+            <input type="number" id="simLat" value="10.123456" step="0.000001">
+        </div>
+        <div>
+            <label for="simLng">Longitude:</label>
+            <input type="number" id="simLng" value="106.789012" step="0.000001">
+        </div>
+        <div>
+            <label for="simActivity">Activity:</label>
+            <input type="text" id="simActivity" value="driving">
+        </div>
+        <button id="sendLocation">Send Location Update</button>
+    </div>
+
+    <script>
+        // WebSocket client management
+        class WebSocketClient {
+            constructor(id) {
+                this.id = id;
+                this.ws = null;
+                this.statusEl = document.getElementById(`status${id}`);
+                this.logEl = document.getElementById(`log${id}`);
+                this.emailEl = document.getElementById(`email${id}`);
+                
+                // Set up event listeners
+                document.getElementById(`connect${id}`).addEventListener('click', () => this.connect());
+                document.getElementById(`disconnect${id}`).addEventListener('click', () => this.disconnect());
+                document.getElementById(`changeEmail${id}`).addEventListener('click', () => this.changeEmailSubscription());
+            }
+            
+            connect() {
+                if (this.ws) {
+                    this.log('Already connected, disconnecting first...');
+                    this.disconnect();
+                }
+                
+                const email = this.emailEl.value.trim();
+                let url = 'ws://localhost:5021';
+                
+                if (email) {
+                    url += `?email=${encodeURIComponent(email)}`;
+                }
+                
+                this.log(`Connecting to ${url}`);
+                
+                try {
+                    this.ws = new WebSocket(url);
+                    
+                    this.ws.onopen = () => {
+                        this.statusEl.textContent = 'Connected';
+                        this.statusEl.className = 'status connected';
+                        this.log('Connection established');
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.log('Received message: ' + JSON.stringify(data, null, 2));
+                        } catch (e) {
+                            this.log('Received non-JSON message: ' + event.data);
+                        }
+                    };
+                    
+                    this.ws.onerror = (error) => {
+                        this.log('WebSocket error: ' + error);
+                    };
+                    
+                    this.ws.onclose = () => {
+                        this.statusEl.textContent = 'Disconnected';
+                        this.statusEl.className = 'status disconnected';
+                        this.log('Connection closed');
+                        this.ws = null;
+                    };
+                } catch (error) {
+                    this.log('Error creating WebSocket: ' + error.message);
+                }
+            }
+            
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                    this.ws = null;
+                    this.log('Disconnected');
+                } else {
+                    this.log('Not connected');
+                }
+            }
+            
+            changeEmailSubscription() {
+                if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                    this.log('Not connected, cannot change subscription');
+                    return;
+                }
+                
+                const newEmail = this.emailEl.value.trim();
+                if (!newEmail) {
+                    this.log('Please enter an email to subscribe to');
+                    return;
+                }
+                
+                const message = {
+                    action: 'subscribe',
+                    email: newEmail
+                };
+                
+                this.ws.send(JSON.stringify(message));
+                this.log(`Changing subscription to email: ${newEmail}`);
+            }
+            
+            log(message) {
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                
+                const timestamp = new Date().toLocaleTimeString();
+                entry.textContent = `[${timestamp}] ${message}`;
+                
+                this.logEl.prepend(entry);
+            }
+        }
+        
+        // Initialize clients
+        const client1 = new WebSocketClient(1);
+        const client2 = new WebSocketClient(2);
+        
+        // Set up location simulation
+        document.getElementById('sendLocation').addEventListener('click', async () => {
+            const email = document.getElementById('simEmail').value.trim();
+            const latitude = parseFloat(document.getElementById('simLat').value);
+            const longitude = parseFloat(document.getElementById('simLng').value);
+            const activity = document.getElementById('simActivity').value.trim();
+            
+            if (!email) {
+                alert('Please enter an email');
+                return;
+            }
+            
+            const locationData = {
+                type: 'location',
+                location: {
+                    latitude,
+                    longitude
+                },
+                activity,
+                email
+            };
+            
+            try {
+                const response = await fetch('http://localhost:5021/api/location', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(locationData)
+                });
+                
+                const result = await response.json();
+                
+                if (client1.ws) client1.log('Sent location update: ' + JSON.stringify(result));
+                if (client2.ws) client2.log('Sent location update: ' + JSON.stringify(result));
+            } catch (error) {
+                console.error('Error sending location:', error);
+                alert('Error sending location: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>
