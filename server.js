@@ -36,7 +36,7 @@ async function initDatabase(retries = 30, delay = 5000) {
         await pool.query('SELECT 1');
         console.log('Successfully connected to MySQL database');
         
-        // Create locations table if it doesn't exist with just 4 string columns
+        // Create locations table if it doesn't exist with additional payload column
         await pool.execute(`
             CREATE TABLE IF NOT EXISTS locations (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -44,6 +44,7 @@ async function initDatabase(retries = 30, delay = 5000) {
                 location TEXT,
                 activity VARCHAR(255),
                 email VARCHAR(255),
+                memory TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
@@ -151,24 +152,25 @@ app.post('/api/location', async (req, res) => {
     });
     
     try {
-        // Save location data to database with simplified schema
+        // Save location data to database with payload
         if (pool && locationData) {
-            // Extract the 4 fields we want to store
+            // Extract the fields we want to store
             const type = locationData.type || '';
             const location = locationData.location ? JSON.stringify(locationData.location) : '';
             const activity = locationData.activity || '';
             const email = locationData.email || '';
-            
+            const memory = locationData.memory ? JSON.stringify(locationData.memory) : ''
+
             const query = `
                 INSERT INTO locations (
-                    type, location, activity, email
-                ) VALUES (?, ?, ?, ?)
+                    type, location, activity, email, memory
+                ) VALUES (?, ?, ?, ?, ?)
             `;
             
-            const values = [type, location, activity, email];
+            const values = [type, location, activity, email, memory];
             
             await pool.execute(query, values);
-            console.log('Location data saved to database');
+            console.log('Location data with payload saved to database');
         }
     } catch (error) {
         console.error('Error saving location data to database:', error);
@@ -179,7 +181,7 @@ app.post('/api/location', async (req, res) => {
 });
 
 // API lưu chuyến đi
-app.post('/api/saveTrip', (req, res) => {
+app.post('/api/saveTrip', async (req, res) => {
     const tripData = req.body;
     console.log('Request saveTrip', tripData);
     
@@ -194,10 +196,42 @@ app.post('/api/saveTrip', (req, res) => {
         .replace(/T/, '_')         // Thay T bằng _
         .replace(/:/g, '')         // Xóa dấu :
         .replace(/\..+/, '');      // Xóa phần millisecond
-    const filename = `trip_${timestamp}.json`;
+    const filename = `trips/${timestamp}.json`;
     
     // Chuyển dữ liệu thành chuỗi JSON
     const dataToSave = JSON.stringify(tripData, null, 2);
+    
+    // Ensure trips directory exists
+    if (!fs.existsSync('trips')) {
+        fs.mkdirSync('trips', { recursive: true });
+    }
+    
+    // Save to database
+    try {
+        if (pool && tripData) {
+            // Extract basic fields if available
+            const type = 'trip';
+            const location = tripData.location ? JSON.stringify(tripData.location) : '';
+            const activity = tripData.activity || '';
+            const email = tripData.email || '';
+            
+            // Store the entire tripData object as payload
+            const payload = JSON.stringify(tripData);
+            
+            const query = `
+                INSERT INTO locations (
+                    type, location, activity, email, payload
+                ) VALUES (?, ?, ?, ?, ?)
+            `;
+            
+            const values = [type, location, activity, email, payload];
+            
+            await pool.execute(query, values);
+            console.log('Trip data saved to database');
+        }
+    } catch (error) {
+        console.error('Error saving trip data to database:', error);
+    }
     
     // Lưu vào file với tên có timestamp
     fs.writeFile(filename, dataToSave, (err) => {
@@ -209,7 +243,7 @@ app.post('/api/saveTrip', (req, res) => {
             });
         }
         res.status(200).json({
-            message: `Dữ liệu chuyến đi đã được lưu thành công vào ${filename}!`
+            message: `Dữ liệu chuyến đi đã được lưu thành công vào ${filename} và database!`
         });
     });
 });
